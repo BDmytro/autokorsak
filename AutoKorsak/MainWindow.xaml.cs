@@ -9,6 +9,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -45,6 +46,7 @@ namespace AutoKorsak
         public static RoutedCommand SaveToCmd = new RoutedCommand();
         public static RoutedCommand PrintPairingCmd = new RoutedCommand();
         public static RoutedCommand ExitCmd = new RoutedCommand();
+        public static RoutedCommand UpdateRatingCmd = new RoutedCommand();
 
         public static RoutedCommand SetThemeAeroCmd = new RoutedCommand();
         public static RoutedCommand SetThemeLunaCmd = new RoutedCommand();
@@ -282,6 +284,27 @@ namespace AutoKorsak
         {
             e.CanExecute = true;
         }
+
+        private void UpdateRatingCmdExecuted(object sender, ExecutedRoutedEventArgs e)
+        {
+            var fileOpenDlg = new Microsoft.Win32.OpenFileDialog();
+            fileOpenDlg.Filter = "Rating files (*.csv)|*.csv";
+            if (fileOpenDlg.ShowDialog() == true)
+            {                
+                TournamentBC.Instance.UpdateRating(_tournamentView.Tournament, fileOpenDlg.FileName);
+            };
+        }
+
+        private void UpdateRatingCmdCanExecute(object sender, CanExecuteRoutedEventArgs e)
+        {
+            e.CanExecute = _tournamentView != null && _tournamentView.IsTournamentEnabled &&
+                #if DEBUG
+                true
+                #else
+                false
+                #endif
+                ;
+        }        
 
         private void PrintPairingCmdExecuted(object sender, ExecutedRoutedEventArgs e)
         {
@@ -2101,13 +2124,12 @@ namespace AutoKorsak
             ExecutePairWindow(editPair);
         }
 
-        bool needRestart;
-
         private void tour_Initialized(object sender, EventArgs e)
         {
             this.LoadSettings();
 
             // Perform restarting if needed
+            bool needRestart;
             _appBc.CheckUpdateState(out needRestart);
             if (needRestart)
             {
@@ -2133,21 +2155,17 @@ namespace AutoKorsak
                 return;
             }
 
-            if (!needRestart)
-            {
-                WindowHelper.SaveLanguage(CurrentLanguage);
+            WindowHelper.SaveLanguage(CurrentLanguage);
 
-                WindowHelper.SaveTheme(CurrentTheme);
-                WindowHelper.SavePlayerDbKind(LocalPlayerDbKind);
-                WindowHelper.SavePlayerDbUsage(LocalPlayerDbUsage);
-                WindowHelper.SaveUseTransliteration(UseTransliteration);
-                this.SaveSettings();
-            }
-
+            WindowHelper.SaveTheme(CurrentTheme);
+            WindowHelper.SavePlayerDbKind(LocalPlayerDbKind);
+            WindowHelper.SavePlayerDbUsage(LocalPlayerDbUsage);
+            WindowHelper.SaveUseTransliteration(UseTransliteration);
+            this.SaveSettings();
             Application.Current.Shutdown();
         }
 
-        #region WallList operation
+#region WallList operation
 
         private void grdWallList_AutoGeneratingColumn(object sender, DataGridAutoGeneratingColumnEventArgs e)
         {
@@ -2296,7 +2314,7 @@ namespace AutoKorsak
             //grid.Columns[0].Visibility = System.Windows.Visibility.Hidden;
         }
 
-        #endregion
+#endregion
 
         private void grdWallList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {

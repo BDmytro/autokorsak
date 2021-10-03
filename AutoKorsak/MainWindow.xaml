@@ -179,6 +179,9 @@
         <CommandBinding Command="{x:Static custom:MainWindow.ExitCmd}"
                   Executed="ExitCmdExecuted"
                   CanExecute="ExitCmdCanExecute"/>
+        <CommandBinding Command="{x:Static custom:MainWindow.UpdateRatingCmd}"
+                  Executed="UpdateRatingCmdExecuted"
+                  CanExecute="UpdateRatingCmdCanExecute"/>
         <CommandBinding Command="{x:Static custom:MainWindow.PrintPairingCmd}"
                   Executed="PrintPairingCmdExecuted"
                   CanExecute="PrintPairingCmdCanExecute"/>
@@ -252,6 +255,8 @@
                     <MenuItem Command="ApplicationCommands.Close" Header="{Binding Capt.Close}" />
                     <Separator />
                     <MenuItem Command="{x:Static custom:MainWindow.ExitCmd}" Header="{Binding Capt.Exit}" />
+                    <Separator />
+                    <MenuItem Command="{x:Static custom:MainWindow.UpdateRatingCmd}" Header="Update rating" />
                 </MenuItem>
                 <MenuItem Header="{Binding Capt.Players}">
                     <MenuItem Header="{Binding Capt.PlayersAdd}" Command="{x:Static custom:MainWindow.AddPlayerCmd}" InputGestureText="Ctrl+R" />

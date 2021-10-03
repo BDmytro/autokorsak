@@ -389,6 +389,7 @@ namespace Tourtoss.BE
                         {
                             int p2End = text.IndexOf("</tr>", p2);
 
+                            bool isRankFirst = false;
                             if (p2End > p2)
                             {
                                 RtItem rec = new RtItem();
@@ -396,7 +397,7 @@ namespace Tourtoss.BE
                                 {
                                     string s;
                                     int p3 = text.IndexOf("<td", p2);
-                                    if (p3 > -1)
+                                    if ((p3 > -1) && (p3 < p2End))
                                     {
                                         int p3End = text.IndexOf(">", p3);
                                         int p4 = text.IndexOf(@"</td>", p3End);
@@ -430,9 +431,24 @@ namespace Tourtoss.BE
                                                     int val = 0;
                                                     if (int.TryParse(s, out val))
                                                         rec.Rating = val;
+                                                    else
+                                                    {
+                                                        rec.Rank = StripHTML(s);
+                                                        isRankFirst = true;
+                                                    }
                                                     break;
                                                 case 4: //Rank
-                                                    rec.Rank = StripHTML(text.Substring(p3End + 1, p4 - p3End - 1));
+                                                    s = text.Substring(p3End + 1, p4 - p3End - 1);
+                                                    if (isRankFirst)
+                                                    {
+                                                        if (int.TryParse(s, out val))
+                                                            rec.Rating = val;
+                                                    }
+                                                    else
+                                                    {
+                                                        rec.Rank = StripHTML(s);
+                                                    }
+
                                                     if (string.IsNullOrWhiteSpace(rec.Rank))
                                                         rec.Rank = string.Empty;
                                                     break;

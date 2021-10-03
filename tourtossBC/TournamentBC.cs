@@ -7,10 +7,14 @@ using System.Text;
 using System.Globalization;
 using System.Threading;
 
+using System.IO;
+
 using DocumentFormat.OpenXml;
 
 using Tourtoss.BE;
 using Tourtoss.DL;
+
+using BGD.RatingSystems;
 
 namespace Tourtoss.BC
 {
@@ -2374,7 +2378,7 @@ namespace Tourtoss.BC
             return result;
         }
 
-        private void PrepareTourInfo(Tournament tournament)
+        private void PrepareTourInfo(Tournament tournament, bool noUpdateRating = false)
         {
             foreach (var player in tournament.Players)
             {
@@ -2383,7 +2387,9 @@ namespace Tourtoss.BC
                 while (player.TourInfoList.Count > tournament.Tours.Count)
                     player.TourInfoList.RemoveAt(player.TourInfoList.Count - 1);
 
-                player.RatingC = player.Rating;
+                if (!noUpdateRating)
+                    player.RatingC = player.Rating;
+
                 player.RatingAbnormal = false;
                 player.RatingBonus = 0;
 
@@ -2483,8 +2489,9 @@ namespace Tourtoss.BC
             }
         }
 
-        public void CalculateRatingInfo(Tournament tournament, int tourNumber, RtKind ratingKind = RtKind.ua)
+        public void CalculateRatingInfo(Tournament tournament, int tourNumber, RtKind ratingKind = RtKind.ua, bool noUpdateRating = false)
         {
+            bool CalculateAfterEachRound = true;
             int N = tourNumber;
             if (N >= tournament.Tours.Count)
                 N = tournament.Tours.Count - 1;
@@ -2502,7 +2509,7 @@ namespace Tourtoss.BC
                 player.IsCalculating = true;
             }
 
-            PrepareTourInfo(tournament);
+            PrepareTourInfo(tournament, noUpdateRating);
 
             bool hasAbnormal = false;
             int abnormalIterations = 10;
@@ -2526,9 +2533,12 @@ namespace Tourtoss.BC
                         double Rp = i == 0 ? player.RatingC : player.TourInfoList[i - 1].Rating;
                         double Ra = player.RatingC;
 
-                        switch (ratingKind)
+                        if (CalculateAfterEachRound)
                         {
-                            case RtKind.ua: Ra = Rp; break;
+                            switch (ratingKind)
+                            {
+                                case RtKind.ua: Ra = Rp; break;
+                            }
                         }
 
                         var pair = tour.Pairs.Find(player.Id);
@@ -2553,9 +2563,12 @@ namespace Tourtoss.BC
 
                         double Rb = competitor.RatingC;
 
-                        switch (ratingKind)
+                        if (CalculateAfterEachRound)
                         {
-                            case RtKind.ua: if (i > 0) Rb = competitor.TourInfoList[i - 1].Rating; break;
+                            switch (ratingKind)
+                            {
+                                case RtKind.ua: if (i > 0) Rb = competitor.TourInfoList[i - 1].Rating; break;
+                            }
                         }
 
                         double Sa = -2;
@@ -2577,9 +2590,15 @@ namespace Tourtoss.BC
                                 case 5: Sa = 0.5; break;
                             }
 
-                        if (Sa == -2)
+                        if ((Sa == -2) ||
+                            ((ratingKind == RtKind.ua) && (pair.ResultByReferee)))
                         {
-                            player.TourInfoList[i].Rating = Ra;
+                            if (CalculateAfterEachRound)
+                                player.TourInfoList[i].Rating = Ra;
+                            else
+                                player.TourInfoList[i].Rating = Rp;
+
+                            player.TourInfoList[i].Diff = 0;
                             continue;
                         }
 
@@ -2679,17 +2698,25 @@ namespace Tourtoss.BC
                                 }
                         }
 
-                        switch (ratingKind)
+                        double nRa, nRb;
+                        UkrainianRatingSystem ukrainianRatingSystem = new UkrainianRatingSystem();
+                        ukrainianRatingSystem.CalculateRating(Ra, Rb, Sa, 1.0, tournament.Boardsize, pair.Handicap, out nRa, out nRb);
+                        Rn = nRa;
+
+                        if (!CalculateAfterEachRound)
                         {
-                            //case RtKind.ua:
-                            case RtKind.eu:
-                                {
-                                    double diff = 0;
-                                    for (int j = 0; j < i; j++)
-                                        diff += player.TourInfoList[j].Diff;
-                                    Rn += diff;
-                                    break;
-                                }
+                            switch (ratingKind)
+                            {
+                                case RtKind.ua:
+                                case RtKind.eu:
+                                    {
+                                        double diff = 0;
+                                        for (int j = 0; j < i; j++)
+                                            diff += player.TourInfoList[j].Diff;
+                                        Rn += diff;
+                                        break;
+                                    }
+                            }
                         }
 
                         player.TourInfoList[i].Rating = Rn;
@@ -2701,12 +2728,12 @@ namespace Tourtoss.BC
 
                 hasAbnormal = false;
 
-                if (!tournament.HandicapUsed)
+                if (!tournament.HandicapUsed )
                 {
                     foreach (var player in players)
                     {
                         double R = player.TourInfoList[N].Rating;
-                        double R0 = player.TourInfoList[0].Rating;
+                        double R0 = player.RatingC;// player.TourInfoList[0].Rating;
                         double K1 = GetRatingValue(R, 1);
                         double K2 = (3100 - R0) / 50000.0;
                         int partCnt = N + 1 - player.NotPlayingInRound.Where(x => x <= N).Count();
@@ -2715,7 +2742,8 @@ namespace Tourtoss.BC
                         {
                             case RtKind.ua:
                                 {
-                                    double dRmax = 0.45 * partCnt * K1 * (1 + K2);
+                                    //double dRmax = 0.45 * partCnt * K1 * (1 + K2);
+                                    double dRmax = UkrainianRatingSystem.MaxRatingDelta(R0, partCnt);
                                     if (tournament.Tours.Count > 2) // in another case it is nonsense
                                         if (R - R0 > dRmax)
                                         {
@@ -2748,9 +2776,9 @@ namespace Tourtoss.BC
             }
         }
 
-        public List<RatingSystem.RatingRec> GetRatingGrowth(Tournament tournament, int tourNumber, int playerId)
+        public List<BE.RatingSystem.RatingRec> GetRatingGrowth(Tournament tournament, int tourNumber, int playerId)
         {
-            List<RatingSystem.RatingRec> result = new List<RatingSystem.RatingRec>();
+            List<BE.RatingSystem.RatingRec> result = new List<BE.RatingSystem.RatingRec>();
 
             if (tournament != null)
             {
@@ -2763,10 +2791,10 @@ namespace Tourtoss.BC
 
                     CalculateRatingInfo(tournament, tourNumber);
 
-                    result.Insert(0, new RatingSystem.RatingRec() { Rating = player.Rating, PersonId = -1 });
+                    result.Insert(0, new BE.RatingSystem.RatingRec() { Rating = player.Rating, PersonId = -1 });
 
                     for (int i = 0; i < tourNumber; i++)
-                        result.Insert(0, new RatingSystem.RatingRec() { Rating = player.TourInfoList[i].Rating, PersonId = -1 });
+                        result.Insert(0, new BE.RatingSystem.RatingRec() { Rating = player.TourInfoList[i].Rating, PersonId = -1 });
                 }
             }
 
@@ -3044,7 +3072,8 @@ namespace Tourtoss.BC
                 switch (col.Id)
                 {
                     case Entity.Place:
-                        row["Place"] = /*!export && */player.SharedPlace ? "(" + rowNumber.ToString() + ")" : rowNumber.ToString(); break;
+                        row["Place"] = /*!export && */
+                        player.SharedPlace ? "(" + rowNumber.ToString() + ")" : rowNumber.ToString(); break;
                     case Entity.Name:
                         row["Name"] = player.Name; break;
                     case Entity.Country:
@@ -3528,6 +3557,80 @@ namespace Tourtoss.BC
             }
 
             return tbl;
+        }
+
+        public void UpdateRating(Tournament tournament, string filename)
+        {
+            NumberFormatInfo nfi = new NumberFormatInfo();
+            nfi.NumberDecimalSeparator = ".";
+
+            int N = tournament.Tours.Count - 1;
+            var players = GetSortedPlayers(tournament, N, false, false);
+
+            PlayerList PlayersToProcess = new PlayerList();
+            PlayersToProcess.AddRange(players);
+            string[] Lines = File.ReadAllLines(filename);
+            Player[] LineToPlayer = new Player[Lines.Length];
+            for (int i = 1; i < Lines.Length; i++)
+            {
+                string[] Vals = Lines[i].Split(new char[] { ',' }, StringSplitOptions.None);
+                if (Vals.Length < 6)
+                    continue;
+
+                string UAName = Vals[0].Trim();
+                string EngName = Vals[1].Trim();
+                foreach (var p in PlayersToProcess)
+                {
+                    string pName = p.Surname.Replace(',', ' ');
+                    while (pName.Contains("  "))
+                        pName = pName.Replace("  ", " ");
+
+                    pName = pName.Trim();
+                    if (string.IsNullOrWhiteSpace(pName) ||
+                        (string.IsNullOrEmpty(EngName) && string.IsNullOrEmpty(UAName)))
+                        continue;
+
+                    if (pName.Equals(UAName, StringComparison.InvariantCultureIgnoreCase) ||
+                        pName.Equals(EngName, StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        p.RatingC = double.Parse(Vals[5], nfi);
+                        PlayersToProcess.Remove(p);
+                        LineToPlayer[i] = p;
+                        break;
+                    }
+                }
+            }
+
+            if (PlayersToProcess.Count > 0)
+            {
+                string s = "";
+                foreach (var p in PlayersToProcess)
+                {
+                    s += p.LocalName + " : " + p.Name + "\r\n";
+                }
+
+                throw new Exception("Players not found: \r\n" + s);
+            }
+
+            CalculateRatingInfo(tournament, N, RtKind.ua, true);
+
+            //string[] Cols = Lines[0].Split(new char[] { ',' }, StringSplitOptions.None);
+            //tournament.
+            for (int i = 1; i < Lines.Length; i++)
+            {
+                if (LineToPlayer[i] == null)
+                    continue;
+
+                string[] Vals = Lines[i].Split(new char[] { ',' }, StringSplitOptions.None);
+                if (Vals.Length < 6)
+                    continue;
+
+                double NewRating = LineToPlayer[i].TourInfoList[N].Rating;
+                Vals[5] = NewRating.ToString(nfi);
+                Lines[i] = string.Join(",", Vals) + ',' + NewRating.ToString(nfi);
+            }
+
+            File.WriteAllLines(filename, Lines);
         }
 
         public string GetTournamentHtmlText(Tournament tournament, int tourNumber, bool isPlainText)
